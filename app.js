@@ -376,7 +376,10 @@ $(function(){
 
 	function form_new_note(){
         note_create_form.clear();
-		note_create_form.render($('#main')[0]);
+        note_create_form.render($('#main')[0]);
+
+        note_create_form.record['sect']=index.actual_section;
+        note_create_form.refresh();
 	}
 
     function form_html_editor(u){
