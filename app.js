@@ -48,10 +48,6 @@ $(function(){
       
         return bytes.toFixed(dp) + ' ' + units[u];
     }
-    function flushContainer(e){
-        while (e.firstChild)
-            e.removeChild(e.lastChild);
-    }
 
     function arrayBufferToBase64(buf){
         var binary = '';
@@ -87,25 +83,23 @@ $(function(){
         .then(function(key){
             window.crypto.subtle.encrypt({name:"AES-GCM",iv:iv_arr,tagLength:128},key,data_buf)
             .then(function(encrypted){
-                let b64_iv=arrayBufferToBase64(iv_arr);
-                let b64_enc=arrayBufferToBase64(encrypted);
-                cb(true,b64_iv+'@'+b64_enc);
+                cb(true,[iv_arr,encrypted]);
             })
             .catch(function(err){ cb(false,err); });
         })
         .catch(function(err){ cb(false,err); });
     }
     function procedure_decrypt(pass,data,cb){
-        let parts = data.split("@");
+        let iv_arr = data[0];
+        let data_buf = data[1];
         let pass_pad = stringToArrayBuffer(pass.padEnd(32,'0').substring(0,32));
-        let iv_arr = base64ToArrayBuffer(parts[0]);
-        let data_buf = base64ToArrayBuffer(parts[1]);
+
         window.crypto.subtle.importKey("raw", pass_pad, {name:"AES-GCM",}, false, ["encrypt", "decrypt"])
         .then(function(key){
             window.crypto.subtle.decrypt({name: "AES-GCM", iv:iv_arr,tagLength: 128},key,data_buf)
             .then(function(decrypted){
-                let str_dec=JSON.parse(arrayBufferToString(decrypted));
-                cb(true,str_dec);
+                let dec_obj=JSON.parse(arrayBufferToString(decrypted));
+                cb(true,dec_obj);
             })
             .catch(function(err){ cb(false,err); });
         })
@@ -115,7 +109,7 @@ $(function(){
         window.crypto.subtle.generateKey({name:"AES-GCM",length:256,},true,["encrypt", "decrypt"])
         .then(function(key){
             window.crypto.subtle.exportKey("jwk",key)
-            .then(function(keydata){cb(true,keydata.k.substring(0,32));})
+            .then(function(keydata){cb(true,keydata.k);})
             .catch(function(err){cb(false,err);});
         })
         .catch(function(err){cb(false,err);});       
@@ -123,22 +117,57 @@ $(function(){
 
     function procedure_save(pass,uuid,data,cb){
         procedure_encrypt(pass,data,(res,ret)=>{
-            localStorage[uuid]=ret;
-
-            if(uuid!=uuid_index){
-                index.file[uuid].date=getdate();
-                procedure_save(index_pass,uuid_index,index,(ret,res)=>{});
-            }
-
-            cb(res,ret);
+            if(res==false){ cb(res,ret); return false; }
+            localforage.setItem(uuid,ret).then(function(value){
+                if(uuid!=uuid_index){
+                    index.file[uuid].date=getdate();
+                    index.file[uuid].size=ret[0].length+ret[1].byteLength;
+                    procedure_save(index_pass,uuid_index,index,(ret,res)=>{
+                        cb(ret,res);
+                    });
+                }
+                else cb(true,null);
+            }).catch(function(err){ cb(false,err); });
         });
     }
     function procedure_load(pass,uuid,cb){
-        let encrypted=localStorage[uuid];
-        procedure_decrypt(pass,encrypted,(res,ret)=>{
-            cb(res,ret);
-        })
+        localforage.getItem(uuid).then(function(encrypted){
+            procedure_decrypt(pass,encrypted,(res,ret)=>{
+                cb(res,ret);
+            });
+        }).catch(function(err){
+            cb(false,err);
+        });
     }
+    function procedure_newf(section,name,cb){
+        procedure_genpass((res,ret)=>{
+            if(res==false){ cb(res,ret); return false; }
+
+            let f = {
+                uuid:uuidv4(),
+                sect:section,
+                name:name,
+                date:getdate(),
+                size:0,
+                pass:ret
+            };
+            index.file[f['uuid']]=f;
+
+            procedure_save(index_pass,uuid_index,index,(res,ret)=>{
+                if(res==false){ cb(res,ret); return false; }
+
+                procedure_save(f['pass'],f['uuid'],'',(res,ret)=>{
+                    cb(res,ret);
+                });
+
+            });
+        });
+    }
+
+    // INTERFACE
+    function err_popup(msg){
+        w2popup.open({title:'Error',body:msg,actions:{Close(evt){w2popup.close()}}});
+    }       
 
     let index_create_form = new w2form({
         name:'index_create_form',
@@ -150,17 +179,19 @@ $(function(){
         actions: {
             'Create':function(event){
                 let form_data=this.getCleanRecord();
-                if(form_data['pass'].length<8)           { w2popup.open({title:'Error',body:'Password too short'}); return false; }
-                if(form_data['pass']!=form_data['pas2']) { w2popup.open({title:'Error',body:'Password mismatch'});  return false; }
-                procedure_save(form_data['pass'],uuid_index,index,(result,error)=>{
-                    if(result==false){ w2popup.open({title:'Error',body:error.toString()}); return false; }
-                    this.destroy();
+
+                if(form_data['pass']==undefined) { err_popup('Fill Password'); return false; }
+                if(form_data['pas2']==undefined) { err_popup('Fill Password Check'); return false; }
+                if(form_data['pass'].length<8) { err_popup('Password too short'); return false; }
+                if(form_data['pass']!=form_data['pas2']) { err_popup('Password mismatch'); return false; }
+
+                procedure_save(form_data['pass'],uuid_index,index,(res,ret)=>{
+                    if(res==false){ err_popup(ret.toString()); return false; }
                     form_decode_index();
                 });
             }
         }
     });
-
     let index_decode_form = new w2form({
         name:'index_decode_form',
         header:'Decode Index',
@@ -170,12 +201,11 @@ $(function(){
         actions: {
             'Decode':function(event){
                 let form_data=this.getCleanRecord();
+                if(form_data['pass']==undefined) { err_popup('Fill Password'); return false; }
                 procedure_load(form_data['pass'],uuid_index,(res,ret)=>{
-                    if(res==false)
-                        { w2popup.open({title:'Error',body:ret.toString()}); return false; }
+                    if(res==false) { err_popup(ret.toString()); return false; }
                     index=ret;
                     index_pass=form_data['pass'];
-                    this.destroy();
                     form_main();
                 });
             }
@@ -186,48 +216,48 @@ $(function(){
         name:'main_layout',
         panels: [{type:'top',size:40},{type:'left',size:150,resizable:true},{type:'main'}]
     });
-    let main_toolbar = new w2toolbar({
-        name:'main_toolbar',
-        items: [
-            { type: 'button', id: 'MT_NS', text: 'New Section', icon: 'fa fa-folder-plus' },
-            { type: 'button', id: 'MT_NN', text: 'New Note', icon: 'fa fa-file' },
-            { type: 'button', id: 'MT_UF', text: 'Upload File', icon: 'fa fa-file-arrow-up' },
-            { type: 'spacer' },
-            { type: 'button', id: 'MT_LK', text: 'Lock Screen', icon: 'fa fa-lock' },
-            { type: 'button', id: 'MT_OP', text: 'Options', icon: 'fa fa-gear' }
-        ],
-        onClick:function(event){
-            switch(event.target){
-                case 'MT_NS': break;
-                case 'MT_NN': form_new_note(); break;
-                case 'MT_UF': break;
-                case 'MT_LK': break;
-                case 'MT_OP': break;
+        let main_toolbar = new w2toolbar({
+            name:'main_toolbar',
+            items: [
+                { type: 'button', id: 'MT_NS', text: 'New Section', icon: 'fa fa-folder-plus' },
+                { type: 'button', id: 'MT_NN', text: 'New Note', icon: 'fa fa-file' },
+                { type: 'button', id: 'MT_UF', text: 'Upload File', icon: 'fa fa-file-arrow-up' },
+                { type: 'spacer' },
+                { type: 'button', id: 'MT_LK', text: 'Lock Screen', icon: 'fa fa-lock' },
+                { type: 'button', id: 'MT_OP', text: 'Options', icon: 'fa fa-gear' }
+            ],
+            onClick:function(event){
+                switch(event.target){
+                    case 'MT_NS': break;
+                    case 'MT_NN': form_new_note(); break;
+                    case 'MT_UF': break;
+                    case 'MT_LK': break;
+                    case 'MT_OP': break;
+                }
             }
-        }
-    });
-    let main_sidebar = new w2sidebar({
-        name:'main_sidebar',
-    });
-    let main_grid = new w2grid({
-        name:'main_grid',
-        columns: [
-            {field:'fname',text:'File'},
-            {field:'fmodi',text:'Modified',size:25},
-            {field:'fsize',text:'Size',size:10}
-        ],
-        onClick:(evt)=>{
-            let f = index.file[evt.recid];
-            let f_split = f.name.split('.');
-            let f_ext = f_split[f_split.length-1].toLowerCase();
-            switch(f_ext){
-                case 'html': form_html_editor(f.uuid); break;
+        });
+        let main_sidebar = new w2sidebar({
+            name:'main_sidebar',
+        });
+        let main_grid = new w2grid({
+            name:'main_grid',
+            columns: [
+                {field:'fname',text:'File'},
+                {field:'fmodi',text:'Modified',size:25},
+                {field:'fsize',text:'Size',size:10}
+            ],
+            onClick:(evt)=>{
+                let f = index.file[evt.recid];
+                let f_split = f.name.split('.');
+                let f_ext = f_split[f_split.length-1].toLowerCase();
+                switch(f_ext){
+                    case 'html': form_html_editor(f.uuid); break;
+                }
             }
-        }
-    });
-    main_layout.html('top',main_toolbar);
-    main_layout.html('left',main_sidebar);
-    main_layout.html('main',main_grid);
+        });
+        main_layout.html('top',main_toolbar);
+        main_layout.html('left',main_sidebar);
+        main_layout.html('main',main_grid);
 
     let note_create_form = new w2form({
         name:'note_create_form',
@@ -239,41 +269,19 @@ $(function(){
             {field:'name',type:'text',required:true,html:{label:'Name'}}
         ],
         actions: {
-            'Cancel':function(event){ this.destroy(); form_main(); },
+            'Cancel':function(event){ form_main(); },
             'Create':function(event){
                 let form_data=this.getCleanRecord();
+                if(form_data['name']==undefined || form_data['name'].length<1){ err_popup('Name too short'); return false; }
                 
-                if(form_data['name']==undefined || form_data['name'].length<1)
-                    { w2popup.open({title:'Error',body:'Name too short'}); return false; }
-                
-                procedure_genpass((res,ret)=>{
-                    if(res==false){ w2popup.open({title:'Error',body:'Unable to generate file password: '+ret.toString()}); return false; }
-
-                    let f = {
-                        uuid:uuidv4(),
-                        sect:index.actual_section,
-                        name:form_data['name']+'.html',
-                        date:getdate(),
-                        pass:ret
-                    };
-                    index.file[f['uuid']]=f;
-
-                    procedure_save(index_pass,uuid_index,index,(res,ret)=>{
-                        if(res==false){ w2popup.open({title:'Error',body:'Unable refresh file index: '+ret.toString()}); return false; }
-
-                        procedure_save(f['pass'],f['uuid'],'',(res,ret)=>{
-                            if(res==false){ w2popup.open({title:'Error',body:'Unable save file: '+ret.toString()}); return false; }
-                            form_main();
-                        });             
-                    });
-                    
+                procedure_newf(index.actual_section,form_data['name']+'.html',(res,ret)=>{
+                    if(res==false){ err_popup('Unable to create note: '+ret.toString()); return false; }
+                    form_main();
                 });
             }
-
         }
     }); 
-    note_create_form.disable('sect');
-
+        note_create_form.disable('sect');
     let html_editor_layout = new w2layout({
         name:'html_editor_layout',
         panels: [
@@ -312,29 +320,29 @@ $(function(){
             }
         }
     });
-    html_editor_layout.html('top',html_editor_toolbar);
-    html_editor_layout.render($('#cked')[0]);
-    let hel_main = html_editor_layout.el('main');
+        html_editor_layout.html('top',html_editor_toolbar);
+        html_editor_layout.render($('#cked')[0]);
+        let hel_main = html_editor_layout.el('main');
     
-    // CKE
-    CKEDITOR.config.resize_enabled=false;
-    var html_editor=CKEDITOR.appendTo(hel_main);
-        html_editor.on('instanceReady',(evt)=>{
-            html_editor.resize(hel_main.clientWidth,hel_main.clientHeight);
-        });
-    window.onresize=(evt)=>{
-        setTimeout(()=>{ // Race condition?
-            html_editor.resize(hel_main.clientWidth,hel_main.clientHeight)
-        },250);
-    };
-    function html_editor_show(){
-        $('#cked')[0].style['opacity']=1;
-        $('#cked')[0].style['pointer-events']='auto';
-    }
-    function html_editor_hide(){
-        $('#cked')[0].style['opacity']=0;
-        $('#cked')[0].style['pointer-events']='none';
-    }
+        // CKE
+        CKEDITOR.config.resize_enabled=false;
+        var html_editor=CKEDITOR.appendTo(hel_main);
+            html_editor.on('instanceReady',(evt)=>{
+                html_editor.resize(hel_main.clientWidth,hel_main.clientHeight);
+            });
+        window.onresize=(evt)=>{
+            setTimeout(()=>{ // Race condition?
+                html_editor.resize(hel_main.clientWidth,hel_main.clientHeight)
+            },250);
+        };
+        function html_editor_show(){
+            $('#cked')[0].style['opacity']=1;
+            $('#cked')[0].style['pointer-events']='auto';
+        }
+        function html_editor_hide(){
+            $('#cked')[0].style['opacity']=0;
+            $('#cked')[0].style['pointer-events']='none';
+        }
 
 
     function form_create_index(){
@@ -347,7 +355,6 @@ $(function(){
 	}
 
     function form_main(){
-
         function add_sidebar_section(sec){ main_sidebar.add([{id:sec,text:sec,icon:'fa fa-folder'}]); }
         function del_sidebar_section(sec){ main_sidebar.remove(sec); }
         function clr_sidebar_section(){ main_sidebar.get().forEach((s)=>{main_sidebar.remove(s)}) }
@@ -355,7 +362,7 @@ $(function(){
 
         function add_grid_file(u){
             let f=index.file[u];
-            main_grid.add({recid:f['uuid'],fname:f['name'],fmodi:f['date'],fsize:humanFileSize(localStorage[f['uuid']].length)});
+            main_grid.add({recid:f['uuid'],fname:f['name'],fmodi:f['date'],fsize:humanFileSize(f['size'])});
         }
         function del_grid_file(u){ main_grid.remove(u); }
 		function clr_grid_file() { main_grid.find().forEach((u)=>{del_grid_file(u)}); }
@@ -381,7 +388,6 @@ $(function(){
         note_create_form.record['sect']=index.actual_section;
         note_create_form.refresh();
 	}
-
     function form_html_editor(u){
         let doc_reg = index.file[u];
         index.actual_file=u;
@@ -398,7 +404,12 @@ $(function(){
     }
 
     // Startup
-    if(localStorage[uuid_index]==undefined)
-         form_create_index();
-    else form_decode_index();
+    localforage.config({driver:localforage.INDEXEDDB,name:'procyontest',version:1.0,storeName:'objects'});
+    localforage.keys().then(function(keys){
+        if(keys.includes(uuid_index))
+             form_decode_index();
+        else form_create_index();
+    }).catch(function(err){
+        err_popup(err);
+    });
 });
