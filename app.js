@@ -246,13 +246,21 @@ $(function(){
                 {field:'fmodi',text:'Modified',size:25},
                 {field:'fsize',text:'Size',size:10}
             ],
-            onClick:(evt)=>{
+            onClick:(evt)=>{ // LMB
+                if(evt.originalEvent.button!=0) return false;
+
                 let f = index.file[evt.recid];
                 let f_split = f.name.split('.');
                 let f_ext = f_split[f_split.length-1].toLowerCase();
+
                 switch(f_ext){
                     case 'html': form_html_editor(f.uuid); break;
                 }
+            },
+            onContextMenu:(evt)=>{ // RMB
+                let f = index.file[evt.recid];
+                
+                console.log(evt);
             }
         });
         main_layout.html('top',main_toolbar);
