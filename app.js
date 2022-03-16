@@ -1,4 +1,4 @@
-$(function(){
+var ProcyonTest = function(){
 
     var uuid_index='00000000-0000-0000-0000-000000000000';
     var index_pass=null;
@@ -165,53 +165,7 @@ $(function(){
     }
 
     // INTERFACE
-    function err_popup(msg){
-        w2popup.open({title:'Error',body:msg,actions:{Close(evt){w2popup.close()}}});
-    }       
-
-    let index_create_form = new w2form({
-        name:'index_create_form',
-        header:'Create new Index',
-        fields:[
-            {field:'pass',type:'password',required:true,html:{label:'New Password'}},
-            {field:'pas2',type:'password',required:true,html:{label:'New Password Check'}}
-        ],
-        actions: {
-            'Create':function(event){
-                let form_data=this.getCleanRecord();
-
-                if(form_data['pass']==undefined) { err_popup('Fill Password'); return false; }
-                if(form_data['pas2']==undefined) { err_popup('Fill Password Check'); return false; }
-                if(form_data['pass'].length<8) { err_popup('Password too short'); return false; }
-                if(form_data['pass']!=form_data['pas2']) { err_popup('Password mismatch'); return false; }
-
-                procedure_save(form_data['pass'],uuid_index,index,(res,ret)=>{
-                    if(res==false){ err_popup(ret.toString()); return false; }
-                    form_decode_index();
-                });
-            }
-        }
-    });
-    let index_decode_form = new w2form({
-        name:'index_decode_form',
-        header:'Decode Index',
-        fields:[
-            {field:'pass',type:'password',required:true,html:{label:'Password'}}
-        ],
-        actions: {
-            'Decode':function(event){
-                let form_data=this.getCleanRecord();
-                if(form_data['pass']==undefined) { err_popup('Fill Password'); return false; }
-                procedure_load(form_data['pass'],uuid_index,(res,ret)=>{
-                    if(res==false) { err_popup(ret.toString()); return false; }
-                    index=ret;
-                    index_pass=form_data['pass'];
-                    form_main();
-                });
-            }
-        }
-    });
-
+/*    
     let main_layout = new w2layout({
         name:'main_layout',
         panels: [{type:'top',size:40},{type:'left',size:150,resizable:true},{type:'main'}]
@@ -331,9 +285,10 @@ $(function(){
         html_editor_layout.html('top',html_editor_toolbar);
         html_editor_layout.render($('#cked')[0]);
         let hel_main = html_editor_layout.el('main');
-    
+ */   
+
         // CKE
-        CKEDITOR.config.resize_enabled=false;
+/*        CKEDITOR.config.resize_enabled=false;
         var html_editor=CKEDITOR.appendTo(hel_main);
             html_editor.on('instanceReady',(evt)=>{
                 html_editor.resize(hel_main.clientWidth,hel_main.clientHeight);
@@ -350,51 +305,113 @@ $(function(){
         function html_editor_hide(){
             $('#cked')[0].style['opacity']=0;
             $('#cked')[0].style['pointer-events']='none';
-        }
+        }*/
 
+    function err_popup(msg){
+        webix.message({text:msg,type:"error",expire: 2000});
+    }
 
     function form_create_index(){
-        index_create_form.clear();
-		index_create_form.render($('#main')[0]);
-	}
+        webix.ui({ id:"form_ci", view:"layout", type:"space", responsive:true, rows:[{
+            view:"label", label:"Create New Index", align:"center"
+        },{cols:[
+            {width:10},
+            { view:"form",
+                elements:[
+                    { view:"text", type:"password", name:"pass", labelWidth:150, label:"New Password" },
+                    { view:"text", type:"password", name:"pas2", labelWidth:150, label:"New Password Check" },
+                    { view:"button", value:"create", click:act_ci }
+                ]
+            },
+            {width:10}
+        ]},{}]});
+
+        function act_ci(id){
+            let form_data=this.getParentView().getValues();
+            if(form_data['pass'].length<8) { err_popup('Password too short'); return false; }
+            if(form_data['pass']!=form_data['pas2']) { err_popup('Password mismatch'); return false; }
+
+            procedure_save(form_data['pass'],uuid_index,index,(res,ret)=>{
+               if(res==false){ err_popup(ret.toString()); return false; }
+               $$('form_ci').destructor();
+               form_decode_index();
+            });
+        }
+    }
     function form_decode_index(){
-        index_decode_form.clear();
-		index_decode_form.render($('#main')[0]);
+        webix.ui({ id:"form_di", view:"layout", type:"space", responsive:true, rows:[{
+            view:"label", label:"Decode Index", align:"center"
+        },{cols:[
+            {width:10},
+            {view:"form",
+                elements:[
+                    { view:"text", type:"password", name:"pass", label:"Password" },
+                    { view:"button", value:"Decode", click:act_di }
+                ]
+            },
+            {width:10}
+        ]},{}]});
+
+        function act_di(id){
+            let form_data=this.getParentView().getValues();
+            if(form_data['pass']==undefined) { err_popup('Fill Password'); return false; }
+            procedure_load(form_data['pass'],uuid_index,(res,ret)=>{
+                if(res==false) { err_popup(ret.toString()); return false; }
+                index=ret;
+                index_pass=form_data['pass'];
+                $$('form_di').destructor();
+                form_main();
+            });
+        };
 	}
 
     function form_main(){
-        function add_sidebar_section(sec){ main_sidebar.add([{id:sec,text:sec,icon:'fa fa-folder'}]); }
-        function del_sidebar_section(sec){ main_sidebar.remove(sec); }
-        function clr_sidebar_section(){ main_sidebar.get().forEach((s)=>{main_sidebar.remove(s)}) }
-		function fil_sidebar_section(){ index.section.forEach((s)=>{ add_sidebar_section(s); }) }
+        webix.ui({ id:"form_main", view:"layout", type:"space", responsive:true, rows:[
+            {view:"toolbar", cols:[
+                { view:"button", label:"New Section", type:"icon", icon:"fa fa-folder-plus", id:"btn_ns", click:act_fm },
+                { view:"button", label:"New Note", type:"icon", icon:"fa fa-file", id:"btn_nn", click:act_fm },
+                { view:"button", label:"Upload File", type:"icon", icon:"fa fa-file-arrow-up", id:"btn_uf", click:act_fm },
+                {},
+                { view:"button", label:"Lock Screen", type:"icon", icon:"fa fa-lock", id:"btn_ls", click:act_fm },
+                { view:"button", label:"Options", type:"icon", icon:"fa fa-gear", id:"btn_op", click:act_fm },
+            ]},
+            {cols:[
+                { view:"datatable", id:"main_sect", scrollX:false, width:200, columns:[
+                    {id:"data1",header:"Section",fillspace:true}
+                ]},
+                { view:"resizer" },
+                { view:"datatable", id:"main_file", scrollX:false, columns:[
+                    {id:"data1",header:'File',fillspace:true},
+                    {id:"data3",header:'Modified'},
+                    {id:"data2",header:'Size'}
+                ]}
+            ]}
+        ]});
 
-        function add_grid_file(u){
-            let f=index.file[u];
-            main_grid.add({recid:f['uuid'],fname:f['name'],fmodi:f['date'],fsize:humanFileSize(f['size'])});
+        let sect_data=index.section.map((e)=>{return[e,e];});
+        $$('main_sect').parse(sect_data,'jsarray');
+
+        let file_data=Object.keys(index.file)
+            .filter((u)=>index.file[u].sect==index.actual_section)
+            .map((u)=>[u,index.file['name'],index.file['date'],index.file['size']]);
+        $$('main_file').parse(file_data,'jsarray');
+
+        function act_fm(id){
+            switch(id){
+                case 'btn_ns': $$('form_main').destructor(); break;
+                case 'btn_nn': $$('form_main').destructor(); form_new_note(); break;
+                case 'btn_uf': $$('form_main').destructor(); break;
+                case 'btn_ls': $$('form_main').destructor(); break;
+                case 'btn_op': $$('form_main').destructor(); break;
+            }
         }
-        function del_grid_file(u){ main_grid.remove(u); }
-		function clr_grid_file() { main_grid.find().forEach((u)=>{del_grid_file(u)}); }
-		function fil_grid_file(){
-            Object.keys(index.file)
-                .filter((u)=>index.file[u].sect==index.actual_section)
-                .forEach((u)=>add_grid_file(u));
-        }
-
-        clr_sidebar_section();
-		clr_grid_file();
-
-        fil_sidebar_section();
-		fil_grid_file();
-
-		main_layout.render($('#main')[0]);
     }
 
 	function form_new_note(){
-        note_create_form.clear();
-        note_create_form.render($('#main')[0]);
-
-        note_create_form.record['sect']=index.actual_section;
-        note_create_form.refresh();
+        //note_create_form.clear();
+        //note_create_form.render($('#main')[0]);
+        //note_create_form.record['sect']=index.actual_section;
+        //note_create_form.refresh();
 	}
     function form_html_editor(u){
         let doc_reg = index.file[u];
@@ -420,4 +437,4 @@ $(function(){
     }).catch(function(err){
         err_popup(err);
     });
-});
+}();

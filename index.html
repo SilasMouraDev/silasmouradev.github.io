@@ -4,14 +4,10 @@
     <title>Procyon Test</title>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     <meta name="viewport" content="initial-scale=1.0 maximum-scale=1.0"/>
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-eval'"/>
 
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:"/>    
-    
-    <link rel="stylesheet" type="text/css" href="w2ui/libs/w2ui/w2ui.css" />
-    <link rel="stylesheet" type="text/css" href="w2ui/icons/icon-font.css" />
-    <link rel="stylesheet" type="text/css" href="w2ui/global.css" />
-    <script type="text/javascript" src="w2ui/libs/jquery/jquery-3.5.0.min.js"></script>
-    <script type="text/javascript" src="w2ui/libs/w2ui/w2ui.js"></script>
+    <link rel="stylesheet" type="text/css" href="webix/webix.min.css" />
+    <script type="text/javascript" src="webix/webix.min.js"></script>
 
     <link rel="stylesheet" type="text/css" href="fontawesome/css/all.min.css"/>
 
@@ -22,8 +18,5 @@
     <link rel="stylesheet" type="text/css" href="app.css" />
     <script type="module" src="app.js"></script>
 </head>
-<body>
-    <div id="main"></div>
-    <div id="cked"></div>
-</body>
+<body><div id="cked"></div></body>
 </html>
