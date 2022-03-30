@@ -143,14 +143,7 @@ var ProcyonTest = function(){
         procedure_genpass((res,ret)=>{
             if(res==false){ cb(res,ret); return false; }
 
-            let f = {
-                uuid:uuidv4(),
-                sect:section,
-                name:name,
-                date:getdate(),
-                size:0,
-                pass:ret
-            };
+            let f={ uuid:uuidv4(), sect:section, name:name, date:getdate(), size:0, pass:ret };
             index.file[f['uuid']]=f;
 
             procedure_save(index_pass,uuid_index,index,(res,ret)=>{
@@ -159,91 +152,12 @@ var ProcyonTest = function(){
                 procedure_save(f['pass'],f['uuid'],'',(res,ret)=>{
                     cb(res,ret);
                 });
-
             });
         });
     }
 
     // INTERFACE
 /*    
-    let main_layout = new w2layout({
-        name:'main_layout',
-        panels: [{type:'top',size:40},{type:'left',size:150,resizable:true},{type:'main'}]
-    });
-        let main_toolbar = new w2toolbar({
-            name:'main_toolbar',
-            items: [
-                { type: 'button', id: 'MT_NS', text: 'New Section', icon: 'fa fa-folder-plus' },
-                { type: 'button', id: 'MT_NN', text: 'New Note', icon: 'fa fa-file' },
-                { type: 'button', id: 'MT_UF', text: 'Upload File', icon: 'fa fa-file-arrow-up' },
-                { type: 'spacer' },
-                { type: 'button', id: 'MT_LK', text: 'Lock Screen', icon: 'fa fa-lock' },
-                { type: 'button', id: 'MT_OP', text: 'Options', icon: 'fa fa-gear' }
-            ],
-            onClick:function(event){
-                switch(event.target){
-                    case 'MT_NS': break;
-                    case 'MT_NN': form_new_note(); break;
-                    case 'MT_UF': break;
-                    case 'MT_LK': break;
-                    case 'MT_OP': break;
-                }
-            }
-        });
-        let main_sidebar = new w2sidebar({
-            name:'main_sidebar',
-        });
-        let main_grid = new w2grid({
-            name:'main_grid',
-            columns: [
-                {field:'fname',text:'File'},
-                {field:'fmodi',text:'Modified',size:25},
-                {field:'fsize',text:'Size',size:10}
-            ],
-            onClick:(evt)=>{ // LMB
-                if(evt.originalEvent.button!=0) return false;
-
-                let f = index.file[evt.recid];
-                let f_split = f.name.split('.');
-                let f_ext = f_split[f_split.length-1].toLowerCase();
-
-                switch(f_ext){
-                    case 'html': form_html_editor(f.uuid); break;
-                }
-            },
-            onContextMenu:(evt)=>{ // RMB
-                let f = index.file[evt.recid];
-                
-                console.log(evt);
-            }
-        });
-        main_layout.html('top',main_toolbar);
-        main_layout.html('left',main_sidebar);
-        main_layout.html('main',main_grid);
-
-    let note_create_form = new w2form({
-        name:'note_create_form',
-        header:'Create New Note',
-        record:{sect:index.actual_section},
-        focus:1,
-        fields:[
-            {field:'sect',type:'text',required:true,html:{label:'Section'}},
-            {field:'name',type:'text',required:true,html:{label:'Name'}}
-        ],
-        actions: {
-            'Cancel':function(event){ form_main(); },
-            'Create':function(event){
-                let form_data=this.getCleanRecord();
-                if(form_data['name']==undefined || form_data['name'].length<1){ err_popup('Name too short'); return false; }
-                
-                procedure_newf(index.actual_section,form_data['name']+'.html',(res,ret)=>{
-                    if(res==false){ err_popup('Unable to create note: '+ret.toString()); return false; }
-                    form_main();
-                });
-            }
-        }
-    }); 
-        note_create_form.disable('sect');
     let html_editor_layout = new w2layout({
         name:'html_editor_layout',
         panels: [
@@ -382,19 +296,19 @@ var ProcyonTest = function(){
                 { view:"resizer" },
                 { view:"datatable", id:"main_file", scrollX:false, columns:[
                     {id:"data1",header:'File',fillspace:true},
-                    {id:"data3",header:'Modified'},
-                    {id:"data2",header:'Size'}
+                    {id:"data2",header:'Modified', width:150 },
+                    {id:"data3",header:'Size'}
                 ]}
             ]}
         ]});
 
         let sect_data=index.section.map((e)=>{return[e,e];});
-        $$('main_sect').parse(sect_data,'jsarray');
+        $$('main_sect').parse({data:sect_data},'jsarray');
 
         let file_data=Object.keys(index.file)
             .filter((u)=>index.file[u].sect==index.actual_section)
-            .map((u)=>[u,index.file['name'],index.file['date'],index.file['size']]);
-        $$('main_file').parse(file_data,'jsarray');
+            .map((u)=>[u,index.file[u]['name'],index.file[u]['date'],humanFileSize(index.file[u]['size'])]);
+        $$('main_file').parse({data:file_data},'jsarray');
 
         function act_fm(id){
             switch(id){
@@ -408,11 +322,33 @@ var ProcyonTest = function(){
     }
 
 	function form_new_note(){
-        //note_create_form.clear();
-        //note_create_form.render($('#main')[0]);
-        //note_create_form.record['sect']=index.actual_section;
-        //note_create_form.refresh();
+        webix.ui({ id:"form_cn", view:"layout", type:"space", responsive:true, rows:[
+            { view:"label", label:"Create New Note", align:"center" },
+            { view:"form", elements:[
+                { view:"text", name:"sect", label:"Section", labelWidth:90, value:index.actual_section, disabled:true },
+                { view:"text", name:"name", label:"Note Name", labelWidth:90 },
+                {cols:[
+                    { view:"button", value:"cancel", id:"btn_cc", click:act_cn },
+                    { view:"button", value:"create", id:"btn_ct", click:act_cn }
+                ]}
+            ]}
+        ]});
+
+        function act_cn(id){
+            switch(id){
+                case 'btn_cc': $$('form_cn').destructor(); form_main(); break;
+                case 'btn_ct':
+                    let form_data=this.getParentView().getParentView().getValues();
+                    if(form_data['name']==''){ err_popup('Name too short'); return false; }
+                    procedure_newf(index.actual_section,form_data['name']+'.html',(res,ret)=>{
+                        if(res==false){ err_popup('Unable to create note: '+ret.toString()); return false; }
+                        $$('form_cn').destructor(); form_main();
+                    });                
+                    break;
+            }
+        }
 	}
+
     function form_html_editor(u){
         let doc_reg = index.file[u];
         index.actual_file=u;
